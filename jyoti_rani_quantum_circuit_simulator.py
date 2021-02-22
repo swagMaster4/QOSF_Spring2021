@@ -7,10 +7,31 @@ Original file is located at
     https://colab.research.google.com/drive/1fjwHq_Ql220ggIeS683h_JzrtPuDxDXT
 """
 
+# Author: Jyoti Rani 
+# Checked my work using Qiskit. 
+
 import math
 import numpy as np
 import random 
 from collections import defaultdict 
+
+# Create "quantum computer" with N qubits (this is actually just a vector :) )
+
+def get_ground_state(num_qubits):
+    """returns a vector of size 2**num_qubits with all zeroes except first element which is 1"""
+    ground_state = np.zeros((2**num_qubits,), dtype=int)
+    ground_state[0] = 1
+    return ground_state
+
+num_qubits = int(input("Please enter the number of qubits in the circuit: "))
+
+if num_qubits > 8 or num_qubits <= 0:
+  num_qubits = 3
+  print("\nSorry, the number of qubits q must be greater than 0 and <= 8, because quantum behavior grows exponentially, (2^n). \nDefault value is 3 qubits. Please run the cell again to change this. ")
+
+
+my_qpu = get_ground_state(num_qubits)
+print("\n\nInitial ground state of my \"quantum computer\" with", num_qubits, "qubits is:", my_qpu)
 
 
 #define 1 qubit gates & CNOT 
@@ -74,17 +95,30 @@ P1x1 = np.array([
 [0, 1]
 ])
 
-# Create "quantum computer" with N qubits (this is actually just a vector :) )
 
-def get_ground_state(num_qubits):
-    """returns a vector of size 2**num_qubits with all zeroes except first element which is 1"""
-    ground_state = np.zeros((2**num_qubits,), dtype=int)
-    ground_state[0] = 1
-    return ground_state
+#Get parametric gate 
 
-num_qubits = 3
-my_qpu = get_ground_state(num_qubits)
-print("Initial ground state of my \"quantum computer\" is:", my_qpu)
+param1 = np.identity(num_qubits)
+def get_param1(param): 
+  param1 = np.array([
+  [math.cos(param["theta"]/2), math.e**(1j * param["lambda"]) * math.sin(param["theta"] / 2)],
+  [math.e**(1j * param["phi"]) * math.sin(param["theta"] / 2), math.e**(1j * param["lambda"] + 1j * param["phi"]) * math.cos(param["theta"] / 2)]
+  ])
+  return param1
+
+
+
+print("The following quantum gates have been initialized:\nSingle qubit: X, Y, Z, H, S, T, custom parametric gate\n2 qubit: CNOT")
+
+def iterate_operations(n, result, gate_unitary, index):
+  for k in range(num_qubits-1, n, -1):
+    op = I 
+    if k == index:
+      op = gate_unitary
+    result = np.kron(op, result)
+  return result
+
+
 
 def get_operator(gate_unitary, target_qubits):
     """return unitary operator of size 2**n x 2**n for given gate and target qubits"""
@@ -92,26 +126,15 @@ def get_operator(gate_unitary, target_qubits):
     index = target_qubits[0] -1
     result = np.array([[1]])
 
+
     #for single qubit gates 
     if len(target_qubits) == 1:
-      for k in range(num_qubits-1, -1, -1):
-        op = I 
-        if k == index:
-          op = gate_unitary
-        result = np.kron(op, result)
-      return result
-
-    #for CNOT, consecutive & non-consecutive cases have been split 
+      return iterate_operations(-1, result, gate_unitary, index)
+    #for CNOT, consecutive & non-consecutive cases have been split (if & else)
     elif len(target_qubits) == 2: 
       target_q = target_qubits[1] - 1
       if abs(index - target_q) == 1:
-        #different number of iterations --> need to condense repetitive for-loop with earlier single qubit gate for loop?
-        for k in range(num_qubits-1, 0, -1):
-          op = I 
-          if k == target_q:
-            op = gate_unitary
-          result = np.kron(op, result)
-        return result
+        return iterate_operations(0, result, gate_unitary, target_q)
       else:
         part1 = np.array([[1]])
         part2 = np.array([[1]])
@@ -129,7 +152,6 @@ def get_operator(gate_unitary, target_qubits):
 
 
 
-
 def run_program(initial_state, program):
     """
     read program, and for each gate:
@@ -139,8 +161,12 @@ def run_program(initial_state, program):
     """
 
     final_psi = initial_state
-    for i in range(len(program)): 
-      operator = get_operator(program[i]["gate"], program[i]["target"])
+    for o in (program):
+      if len(o) == 3: 
+        matrix = get_param1(o["params"])
+      else:
+        matrix = o["gate"]
+      operator = get_operator(matrix, o["target"])
       final_psi = np.dot(final_psi, operator)
     return final_psi
 
@@ -165,9 +191,10 @@ def get_counts(state_vector, num_shots):
 # Define program:
 
 my_circuit = [
-{ "gate": X, "target": [1] },   
-{ "gate": X, "target": [3] },             
-{ "gate": CX, "target": [1, 3] } 
+{ "gate":  X, "target": [1] },
+{ "gate": X, "target": [3] }, 
+{ "gate": CX, "target": [1, 3] },             
+{ "gate": param1, "target": [0], "params": { "theta": math.pi, "phi": (math.pi)/2, "lambda": math.pi }  } 
 
 ]
 
@@ -183,34 +210,4 @@ counts = get_counts(final_state, 1000)
 print("\nResults are")
 for key,val in counts.items():
     print("{} : {}".format(key, val))
-
-"""To check our work, we use the existing libray qiskit. Note: qiskit's notation of qubits is the opposite of our simulator. Thus, X gate on the first qubit in the code above is represented as the X gate on the last qubit in Qiskit. """
-
-pip install qiskit
-
-from qiskit import QuantumCircuit, Aer, execute
-from math import pi
-import numpy as np
-from qiskit.visualization import plot_histogram
-
-qc = QuantumCircuit(3)
-# Apply X-gate to qubit 0:
-qc.x(2)
-# Apply X-gate to qubit 2:
-qc.x(0)
-# # Apply CX-gate to qubit (0,2):
-qc.cx(2,0)
-# # See the circuit:
-qc.draw()
-
-# Let's see the result
-backend = Aer.get_backend('statevector_simulator')
-final_state = execute(qc,backend).result().get_statevector()
-
-# # In Jupyter Notebooks we can display this nicely using Latex.
-# # If not using Jupyter Notebooks you may need to remove the 
-# # array_to_latex function and use print(final_state) instead.
-# from qiskit_textbook.tools import array_to_latex
-# array_to_latex(final_state, pretext="\\text{Statevector} = ")
-print(final_state)
 
